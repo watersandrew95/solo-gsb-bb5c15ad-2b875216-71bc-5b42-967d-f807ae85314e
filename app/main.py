@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from .geo import MaskCircle, haversine_m, mask_track
 from .gpxutil import build_gpx, parse_gpx
+from .splits import DEFAULT_SPLIT_KM, MAX_SPLIT_KM, MIN_SPLIT_KM, compute_splits
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -33,6 +34,14 @@ class CircleIn(BaseModel):
 class MaskRequest(BaseModel):
     track_id: str
     circles: list[CircleIn] = []
+
+
+class SplitsRequest(BaseModel):
+    track_id: str
+    split_km: float = Field(
+        default=DEFAULT_SPLIT_KM, ge=MIN_SPLIT_KM, le=MAX_SPLIT_KM,
+        description="每段里程（公里），0.1～10，默认 1",
+    )
 
 
 def _point_dict(p):
@@ -120,6 +129,37 @@ def export(req: MaskRequest):
         media_type="application/gpx+xml",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+def _split_dict(sp):
+    return {
+        "index": sp.index,
+        "distance_m": sp.distance_m,
+        "duration_s": sp.duration_s,
+        "pace_s_per_km": sp.pace_s_per_km,
+        "start_time": sp.start_time.isoformat() if sp.start_time else None,
+        "end_time": sp.end_time.isoformat() if sp.end_time else None,
+    }
+
+
+@app.post("/api/splits")
+def splits(req: SplitsRequest):
+    track = _get_track(req.track_id)
+    result = compute_splits(track["segments"], req.split_km)
+    return {
+        "track_id": req.track_id,
+        "split_km": req.split_km,
+        "segments": [
+            {
+                "segment_index": seg.segment_index,
+                "ok": seg.ok,
+                "message": seg.message,
+                "total_distance_m": seg.total_distance_m,
+                "splits": [_split_dict(sp) for sp in seg.splits],
+            }
+            for seg in result
+        ],
+    }
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

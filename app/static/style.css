@@ -112,6 +112,55 @@ button.secondary:hover { background: #fff5f5; }
 
 #download { width: 100%; margin-top: 10px; }
 
+#splits {
+  font-size: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.split-seg {
+  font-weight: 600;
+  color: #444;
+  margin: 10px 0 4px;
+}
+#splits .split-seg:first-child { margin-top: 0; }
+.split-warn {
+  color: #c62828;
+  background: #fff5f5;
+  border: 1px solid #f0d0d0;
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.split-warn.muted {
+  color: #999;
+  background: none;
+  border: none;
+  padding: 0;
+}
+.split-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.split-table th, .split-table td {
+  padding: 4px 6px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid #f0f0f0;
+}
+.split-table th {
+  color: #888;
+  font-weight: 500;
+  font-size: 11px;
+}
+.split-table th:first-child, .split-table td:first-child { text-align: center; }
+.split-table th:last-child, .split-table td:last-child { text-align: left; }
+.split-table tbody tr:last-child td { border-bottom: none; }
+.split-table td { color: #333; font-variant-numeric: tabular-nums; }
+
 .preview { flex: 1; min-width: 0; }
 #map {
   width: 100%;

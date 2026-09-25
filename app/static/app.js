@@ -161,10 +161,36 @@ async function refreshMask() {
       body: JSON.stringify({ track_id: state.trackId, circles: state.circles }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "裁切计算失败");
+    if (!res.ok) throw new Error(errDetail(data, "裁切计算失败"));
     state.masked = data;
     renderStats(data);
     draw();
+  } catch (err) {
+    showMessage(err.message);
+  }
+}
+
+let splitsTimer = null;
+function scheduleSplits() {
+  clearTimeout(splitsTimer);
+  splitsTimer = setTimeout(refreshSplits, 250);
+}
+
+async function refreshSplits() {
+  if (!state.trackId) return;
+  const input = document.getElementById("split-km");
+  let km = Number(input.value);
+  if (!Number.isFinite(km) || km <= 0) km = 1;
+  km = Math.min(10, Math.max(0.1, km));
+  try {
+    const res = await fetch("/api/splits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ track_id: state.trackId, split_km: km }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(errDetail(data, "配速计算失败"));
+    renderSplits(data);
   } catch (err) {
     showMessage(err.message);
   }
@@ -175,7 +201,7 @@ async function uploadFile(file) {
   fd.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "上传失败");
+  if (!res.ok) throw new Error(errDetail(data, "上传失败"));
   state.trackId = data.track_id;
   state.name = data.name;
   state.segments = data.segments;
@@ -185,6 +211,7 @@ async function uploadFile(file) {
   renderTrackInfo(data.stats);
   renderCircleList();
   await refreshMask();
+  await refreshSplits();
 }
 
 async function downloadGpx() {
@@ -197,7 +224,7 @@ async function downloadGpx() {
     });
     if (!res.ok) {
       const data = await res.json();
-      throw new Error(data.detail || "导出失败");
+      throw new Error(errDetail(data, "导出失败"));
     }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
@@ -241,6 +268,59 @@ function renderStats(d) {
     `<div>裁切后距离：<b>${fmtKm(d.distance_after_m)} km</b>（隐藏 ${hiddenKm} km）</div>` +
     `<div>可见分段：<b>${d.visible_segments.length}</b> 个 trkseg（导出时互不连接）</div>`;
   document.getElementById("download").disabled = false;
+}
+
+function fmtDuration(totalSec) {
+  const s = Math.max(0, Math.round(totalSec));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = h ? String(m).padStart(2, "0") : String(m);
+  return (h ? `${h}:` : "") + `${mm}:${String(sec).padStart(2, "0")}`;
+}
+
+function fmtPace(secPerKm) {
+  if (secPerKm == null || !Number.isFinite(secPerKm)) return "—"; // 零里程不显示无穷配速
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function fmtClock(iso) {
+  if (!iso) return "-";
+  return new Date(iso).toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+function renderSplits(data) {
+  const el = document.getElementById("splits");
+  el.classList.remove("muted");
+  let html = "";
+  for (const seg of data.segments) {
+    html += `<div class="split-seg">原始分段 #${seg.segment_index}` +
+      ` · 累计 ${fmtKm(seg.total_distance_m)} km</div>`;
+    if (!seg.ok) {
+      html += `<div class="split-warn">${escapeHtml(seg.message || "无法计算配速")}</div>`;
+      continue;
+    }
+    if (!seg.splits.length) {
+      html += `<div class="split-warn muted">轨迹点不足，无分段</div>`;
+      continue;
+    }
+    html += `<table class="split-table"><thead><tr>` +
+      `<th>段</th><th>距离(km)</th><th>耗时</th><th>配速(/km)</th><th>起止时间</th>` +
+      `</tr></thead><tbody>`;
+    for (const sp of seg.splits) {
+      html += `<tr>` +
+        `<td>${sp.index}</td>` +
+        `<td>${fmtKm(sp.distance_m)}</td>` +
+        `<td>${fmtDuration(sp.duration_s)}</td>` +
+        `<td>${fmtPace(sp.pace_s_per_km)}</td>` +
+        `<td>${fmtClock(sp.start_time)}–${fmtClock(sp.end_time)}</td>` +
+        `</tr>`;
+    }
+    html += `</tbody></table>`;
+  }
+  el.innerHTML = html;
 }
 
 function renderCircleList() {
@@ -293,6 +373,17 @@ function escapeHtml(s) {
   }[ch]));
 }
 
+function errDetail(data, fallback) {
+  // FastAPI 参数校验失败时 detail 为数组，统一转成可读字符串
+  if (!data || data.detail == null) return fallback;
+  if (typeof data.detail === "string") return data.detail;
+  try {
+    return data.detail.map((d) => d.msg).join("；") || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /* ---------- 事件绑定 ---------- */
 
 function resizeCanvas() {
@@ -331,6 +422,8 @@ document.getElementById("clear-circles").addEventListener("click", () => {
 });
 
 document.getElementById("download").addEventListener("click", downloadGpx);
+
+document.getElementById("split-km").addEventListener("input", scheduleSplits);
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
