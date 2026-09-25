@@ -112,6 +112,33 @@ button.secondary:hover { background: #fff5f5; }
 
 #download { width: 100%; margin-top: 10px; }
 
+.pace { padding: 0 24px 24px; }
+.pace h2 {
+  font-size: 14px;
+  margin: 0 0 8px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+}
+.pace .hint { margin: 0; }
+.pace-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  margin: 6px 0 10px;
+  background: #fff;
+}
+.pace-table th, .pace-table td {
+  border: 1px solid #e8e8e8;
+  padding: 4px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+.pace-table th { background: #f0f4f8; font-weight: 600; }
+.pace-table th:first-child, .pace-table td:first-child { text-align: center; }
+.pace-seg-head { font-size: 13px; font-weight: 600; color: #555; margin-top: 8px; }
+.pace-total { font-size: 13px; }
+.pace-error { color: #c62828; }
+
 .preview { flex: 1; min-width: 0; }
 #map {
   width: 100%;

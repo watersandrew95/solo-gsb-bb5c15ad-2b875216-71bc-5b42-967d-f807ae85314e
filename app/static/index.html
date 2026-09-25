@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>徒步轨迹分享</h1>
-    <p>上传含时间的 GPX → 在预览图上点击敏感地点并设定遮蔽半径 → 导出按遮蔽圆裁切、互不连接的 GPX 分段</p>
+    <p>上传含时间的 GPX → 自动统计分段配速 → 在预览图上点击敏感地点并设定遮蔽半径 → 导出按遮蔽圆裁切、互不连接的 GPX 分段</p>
   </header>
   <main>
     <section class="panel">
@@ -40,6 +40,16 @@
       </div>
     </section>
   </main>
+
+  <section class="pace">
+    <h2>4. 分段配速</h2>
+    <label class="row">每段里程（公里）
+      <input type="number" id="split-km" value="1" min="0.1" max="10" step="0.1">
+      <span class="hint">范围 0.1～10，默认 1；按原始 trkseg 分别累计球面距离，末尾不足一段也列出</span>
+    </label>
+    <div id="pace" class="info muted">上传含时间的 GPX 后自动计算</div>
+  </section>
+
   <div id="message" hidden></div>
   <script src="/static/app.js"></script>
 </body>

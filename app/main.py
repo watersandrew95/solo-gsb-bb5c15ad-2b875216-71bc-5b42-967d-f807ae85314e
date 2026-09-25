@@ -1,4 +1,4 @@
-"""FastAPI 入口：上传 GPX、遮蔽计算、导出、静态页面。"""
+"""FastAPI 入口：上传 GPX、遮蔽计算、导出、分段配速、静态页面。"""
 from __future__ import annotations
 
 import uuid
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from .geo import MaskCircle, haversine_m, mask_track
 from .gpxutil import build_gpx, parse_gpx
+from .pace import DEFAULT_SPLIT_KM, MAX_SPLIT_KM, MIN_SPLIT_KM, pace_splits
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -33,6 +34,11 @@ class CircleIn(BaseModel):
 class MaskRequest(BaseModel):
     track_id: str
     circles: list[CircleIn] = []
+
+
+class PaceRequest(BaseModel):
+    track_id: str
+    split_km: float = Field(default=DEFAULT_SPLIT_KM, ge=MIN_SPLIT_KM, le=MAX_SPLIT_KM)
 
 
 def _point_dict(p):
@@ -120,6 +126,51 @@ def export(req: MaskRequest):
         media_type="application/gpx+xml",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+def _split_dict(s):
+    return {
+        "seg_index": s.seg_index,
+        "split_index": s.split_index,
+        "distance_m": s.distance_m,
+        "duration_s": s.duration_s,
+        "pace_min_per_km": s.pace_min_per_km,
+        "start_time": s.start_time.isoformat(),
+        "end_time": s.end_time.isoformat(),
+    }
+
+
+@app.post("/api/pace")
+def pace(req: PaceRequest):
+    """分段配速：按 split_km 公里把每个原始 trkseg 切段，返回每段距离/耗时/配速/起止时间。"""
+    track = _get_track(req.track_id)
+    try:
+        per_segment = pace_splits(track["segments"], req.split_km)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    segments_out = [
+        {
+            "seg_index": seg_idx,
+            "distance_m": sum(s.distance_m for s in splits),
+            "splits": [_split_dict(s) for s in splits],
+        }
+        for seg_idx, splits in enumerate(per_segment, start=1)
+    ]
+    total_distance = sum(g["distance_m"] for g in segments_out)
+    total_duration = sum(s.duration_s for splits in per_segment for s in splits)
+    return {
+        "split_km": req.split_km,
+        "segments": segments_out,
+        "totals": {
+            "distance_m": total_distance,
+            "duration_s": total_duration,
+            "pace_min_per_km": (
+                total_duration / 60.0 / (total_distance / 1000.0)
+                if total_distance > 0 else None
+            ),
+        },
+    }
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

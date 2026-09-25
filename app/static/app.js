@@ -175,7 +175,7 @@ async function uploadFile(file) {
   fd.append("file", file);
   const res = await fetch("/api/upload", { method: "POST", body: fd });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || "上传失败");
+  if (!res.ok) throw new Error(errDetail(data, "上传失败"));
   state.trackId = data.track_id;
   state.name = data.name;
   state.segments = data.segments;
@@ -185,6 +185,38 @@ async function uploadFile(file) {
   renderTrackInfo(data.stats);
   renderCircleList();
   await refreshMask();
+  await refreshPace();
+}
+
+let paceTimer = null;
+function schedulePace() {
+  clearTimeout(paceTimer);
+  paceTimer = setTimeout(refreshPace, 250);
+}
+
+function splitKmValue() {
+  const input = document.getElementById("split-km");
+  let v = Number(input.value);
+  if (!input.value || !Number.isFinite(v)) v = 1;
+  return Math.min(10, Math.max(0.1, v));
+}
+
+async function refreshPace() {
+  if (!state.trackId) return;
+  const el = document.getElementById("pace");
+  try {
+    const res = await fetch("/api/pace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ track_id: state.trackId, split_km: splitKmValue() }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(errDetail(data, "配速计算失败"));
+    renderPace(data);
+  } catch (err) {
+    el.classList.remove("muted");
+    el.innerHTML = `<div class="pace-error">无法计算分段配速：${escapeHtml(err.message)}</div>`;
+  }
 }
 
 async function downloadGpx() {
@@ -217,6 +249,67 @@ async function downloadGpx() {
 
 function fmtKm(m) {
   return (m / 1000).toFixed(2);
+}
+
+function fmtDuration(sec) {
+  const t = Math.max(0, Math.round(sec));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  const ss = String(s).padStart(2, "0");
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${ss}`;
+  return `${m}:${ss}`;
+}
+
+function fmtPace(paceMinPerKm) {
+  if (paceMinPerKm === null || paceMinPerKm === undefined ||
+      !Number.isFinite(paceMinPerKm)) {
+    return "—";  // 零里程段不显示无穷配速
+  }
+  const totalSec = Math.round(paceMinPerKm * 60);
+  return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, "0")}`;
+}
+
+function fmtTime(iso) {
+  return new Date(iso).toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+function errDetail(data, fallback) {
+  if (data && typeof data.detail === "string") return data.detail;
+  if (data && Array.isArray(data.detail) && data.detail.length) {
+    return data.detail.map((d) => d.msg || JSON.stringify(d)).join("；");
+  }
+  return fallback;
+}
+
+function renderPace(data) {
+  const el = document.getElementById("pace");
+  el.classList.remove("muted");
+  let html = "";
+  for (const seg of data.segments) {
+    if (data.segments.length > 1) {
+      html += `<div class="pace-seg-head">原始分段 #${seg.seg_index}` +
+        `（${fmtKm(seg.distance_m)} km）</div>`;
+    }
+    const rows = seg.splits.map((s) =>
+      "<tr>" +
+      `<td>${s.split_index}</td>` +
+      `<td>${fmtKm(s.distance_m)}</td>` +
+      `<td>${fmtDuration(s.duration_s)}</td>` +
+      `<td>${fmtPace(s.pace_min_per_km)}</td>` +
+      `<td>${fmtTime(s.start_time)} ~ ${fmtTime(s.end_time)}</td>` +
+      "</tr>"
+    ).join("");
+    html +=
+      '<table class="pace-table"><thead><tr>' +
+      "<th>段</th><th>距离(km)</th><th>耗时</th><th>配速(分/km)</th><th>起止时间</th>" +
+      `</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  const t = data.totals;
+  html += `<div class="pace-total">合计：<b>${fmtKm(t.distance_m)} km</b>，` +
+    `耗时 <b>${fmtDuration(t.duration_s)}</b>，` +
+    `平均配速 <b>${fmtPace(t.pace_min_per_km)}</b> 分/km</div>`;
+  el.innerHTML = html;
 }
 
 function renderTrackInfo(s) {
@@ -331,6 +424,12 @@ document.getElementById("clear-circles").addEventListener("click", () => {
 });
 
 document.getElementById("download").addEventListener("click", downloadGpx);
+
+document.getElementById("split-km").addEventListener("input", schedulePace);
+document.getElementById("split-km").addEventListener("change", (e) => {
+  e.target.value = splitKmValue();  // 越界/非法输入收敛到 0.1～10
+  refreshPace();
+});
 
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
